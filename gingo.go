@@ -10,9 +10,12 @@ type Engine struct {
 	*gin.Engine
 }
 
+type OptionFunc func(*Engine)
+
 func (e *Engine) With(opts ...OptionFunc) *Engine {
 	for _, opt := range opts {
-		opt(e)
+		o := opt // copy to avoid closure issues
+		o(e)
 	}
 	return e
 }
@@ -23,7 +26,6 @@ type RouterGroup struct {
 
 type HandlerFunc func(*Context)
 
-type OptionFunc func(*Engine)
 
 // New returns a new blank Engine instance without any middleware attached.
 // By default, the configuration is:
