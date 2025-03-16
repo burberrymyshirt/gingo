@@ -89,7 +89,6 @@ func (c *Context) ShouldBindWith(obj interface{}, b binding.Binding) error {
 // ShouldBindWith for better performance if you need to call only once.
 func (c *Context) ShouldBindBodyWith(obj interface{}, bb binding.BindingBody) (err error) {
 	err = c.Context.ShouldBindBodyWith(obj, bb)
-
 	if err != nil {
 		return c.ParseError(err, obj)
 	}
@@ -152,7 +151,7 @@ func (c *Context) ParseError(err error, obj interface{}) error {
 		}
 
 		if len(requiredFields) <= 0 {
-			return errors.New("Request body cannot be empty")
+			return nil
 		}
 
 		return errors.New(
