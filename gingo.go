@@ -1,6 +1,10 @@
 package gingo
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
 
 type Engine struct {
 	*gin.Engine
@@ -64,9 +68,24 @@ func (e *Engine) Handle(httpMethod, relativePath string, handlers ...HandlerFunc
 
 // Common HTTP method shortcuts
 func (r *Engine) GET(relativePath string, handlers ...HandlerFunc) {
-	r.Handle("GET", relativePath, handlers...)
+	r.Handle(http.MethodGet, relativePath, handlers...)
 }
 
 func (r *Engine) POST(relativePath string, handlers ...HandlerFunc) {
-	r.Handle("POST", relativePath, handlers...)
+	r.Handle(http.MethodPost, relativePath, handlers...)
+}
+
+func (r *Engine) PUT(relativePath string, handlers ...HandlerFunc) {
+	r.Handle(http.MethodPut, relativePath, handlers...)
+}
+
+func (r *Engine) PATCH(relativePath string, handlers ...HandlerFunc) {
+	r.Handle(http.MethodPatch, relativePath, handlers...)
+}
+
+func (r *Engine) OPTIONS(relativePath string, handlers ...HandlerFunc) {
+	r.Handle(http.MethodOptions, relativePath, handlers...)
+}
+func (r *Engine) DELETE(relativePath string, handlers ...HandlerFunc) {
+	r.Handle(http.MethodDelete, relativePath, handlers...)
 }
