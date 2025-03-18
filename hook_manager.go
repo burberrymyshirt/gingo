@@ -1,0 +1,109 @@
+package gingo
+
+import (
+	"github.com/gin-gonic/gin"
+)
+
+// HookType represents different hook points in the request lifecycle
+type HookType int
+
+const (
+	BeforeRequest HookType = iota
+	AfterRequest
+	AfterPanic
+)
+
+// HookManager manages hooks for different lifecycle events
+type HookManager struct {
+	hooks          map[HookType][]HandlerFunc
+	bootstrapHooks []gin.HandlerFunc
+}
+
+// NewHookManager creates a new hook manager
+func NewHookManager() *HookManager {
+	h := &HookManager{
+		hooks:          make(map[HookType][]HandlerFunc),
+		bootstrapHooks: getBootstrapFuncs(),
+	}
+	return h
+}
+
+func getBootstrapFuncs() []gin.HandlerFunc {
+	var funcs []gin.HandlerFunc
+	funcs = append(funcs, func(ginContext *gin.Context) {
+		gingoContext := &Context{Context: ginContext}
+		ginContext.Set("gingo_context", gingoContext)
+		ginContext.Next()
+	})
+
+	return funcs
+}
+
+// AddHook adds a hook for a specific lifecycle event
+func (m *HookManager) AddHook(hookType HookType, hook HandlerFunc) {
+	m.hooks[hookType] = append(m.hooks[hookType], hook)
+}
+
+// executeHooks runs all hooks for a specific hook type
+func (m *HookManager) executeHooks(
+	hookType HookType,
+	ginContext *gin.Context,
+	additionalHooks ...HandlerFunc,
+) {
+	// Runs predefined global hooks, along with additional request middleware
+	for _, hook := range append(m.hooks[hookType], additionalHooks...) {
+		h := hook // copy to avoid closure issues
+		context, ok := ginContext.Get("gingo_context")
+		if !ok {
+			panic("gingo context does not exist")
+		}
+		c := context.(*Context)
+		h(c)
+	}
+}
+
+func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
+	var ginHandlers []gin.HandlerFunc
+
+	// Add bootstrapHooks
+	ginHandlers = append(ginHandlers, m.bootstrapHooks...)
+
+	// Add panic recovery middleware
+	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				m.executeHooks(AfterPanic, ginContext)
+				panic(r) // Re-panic after hooks
+			}
+		}()
+		ginContext.Next()
+	})
+
+	// Add a middleware for "before request" hooks
+	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
+		m.executeHooks(BeforeRequest, ginContext)
+		ginContext.Next()
+	})
+
+	// Convert gingo handler to gin.HandlerFunc
+	handler := routeDef.RequestHandler
+	ginHandlers = append(
+		ginHandlers,
+		func(ginContext *gin.Context) {
+			context, ok := ginContext.Get("gingo_context")
+			if !ok {
+				panic("gingo context does not exist")
+			}
+			c := context.(*Context)
+			handler(c)
+			c.Next() // call next, as normal request handlers don't do that
+		},
+	)
+
+	// Add a middleware for "after request" hooks
+	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
+		m.executeHooks(AfterRequest, ginContext)
+	})
+
+	return ginHandlers // Return the handlers instead of nil
+}

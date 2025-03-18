@@ -1,13 +1,17 @@
 package gingo
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Engine struct {
 	*gin.Engine
+	definitions []RouteDefinition
+	hookManager HookManager
 }
 
 type OptionFunc func(*Engine)
@@ -26,6 +30,15 @@ type RouterGroup struct {
 
 type HandlerFunc func(*Context)
 
+type RouteDefinition struct {
+	Method                string
+	Path                  string
+	RequestHandler        HandlerFunc
+	PreRequestMiddleware  []HandlerFunc
+	PostRequestMiddleware []HandlerFunc
+	Description           string
+	Tags                  []string
+}
 
 // New returns a new blank Engine instance without any middleware attached.
 // By default, the configuration is:
@@ -37,7 +50,8 @@ type HandlerFunc func(*Context)
 // - UnescapePathValues:     true
 func New(opts ...OptionFunc) *Engine {
 	e := &Engine{
-		Engine: gin.New(),
+		Engine:      gin.New(),
+		hookManager: *NewHookManager(),
 	}
 	return e.With(opts...)
 }
@@ -45,49 +59,52 @@ func New(opts ...OptionFunc) *Engine {
 // Default returns an Engine instance with the Logger and Recovery middleware already attached.
 func Default(opts ...OptionFunc) *Engine {
 	e := &Engine{
-		Engine: gin.Default(),
+		Engine:      gin.Default(),
+		hookManager: *NewHookManager(),
 	}
 	return e.With(opts...)
 }
 
-func (e *Engine) Handle(httpMethod, relativePath string, handlers ...HandlerFunc) {
-	// Convert your handlers to gin.HandlerFunc
-	ginHandlers := make([]gin.HandlerFunc, len(handlers))
-	for _, handler := range handlers {
-		h := handler // create a copy to avoid closure issues
-		ginHandlers = append(
-			ginHandlers,
-			func(ginContext *gin.Context) {
-				context := &Context{Context: ginContext}
-				h(context)
-			},
-		)
+func (e *Engine) Handle(httpMethod string, relativePath string, handlers ...HandlerFunc) {
+	routeDef := &RouteDefinition{
+		Method:                httpMethod,
+		Path:                  relativePath,
+		Description:           fmt.Sprintf("%s: %s", strings.ToUpper(httpMethod), relativePath),
+		RequestHandler:        handlers[len(handlers)-1],
+		PreRequestMiddleware:  handlers[:len(handlers)-1],
+		PostRequestMiddleware: make([]HandlerFunc, 0),
 	}
 
+	e.handle(routeDef)
+}
+
+func (e *Engine) handle(routeDef *RouteDefinition) {
+	ginHandlers := e.hookManager.mapHandlers(routeDef)
+
 	// Register with gin
-	e.Engine.Handle(httpMethod, relativePath, ginHandlers...)
+	e.Engine.Handle(routeDef.Method, routeDef.Path, ginHandlers...)
 }
 
-// Common HTTP method shortcuts
-func (r *Engine) GET(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodGet, relativePath, handlers...)
+func (e *Engine) GET(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodGet, relativePath, handlers...)
 }
 
-func (r *Engine) POST(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPost, relativePath, handlers...)
+func (e *Engine) POST(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodPost, relativePath, handlers...)
 }
 
-func (r *Engine) PUT(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPut, relativePath, handlers...)
+func (e *Engine) PUT(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodPut, relativePath, handlers...)
 }
 
-func (r *Engine) PATCH(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPatch, relativePath, handlers...)
+func (e *Engine) PATCH(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodPatch, relativePath, handlers...)
 }
 
-func (r *Engine) OPTIONS(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodOptions, relativePath, handlers...)
+func (e *Engine) OPTIONS(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodOptions, relativePath, handlers...)
 }
-func (r *Engine) DELETE(relativePath string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodDelete, relativePath, handlers...)
+
+func (e *Engine) DELETE(relativePath string, handlers ...HandlerFunc) {
+	e.Handle(http.MethodDelete, relativePath, handlers...)
 }
