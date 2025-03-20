@@ -68,17 +68,6 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 	// Add bootstrapHooks
 	ginHandlers = append(ginHandlers, m.bootstrapHooks...)
 
-	// Add panic recovery middleware
-	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
-		defer func() {
-			if r := recover(); r != nil {
-				m.executeHooks(AfterPanic, ginContext)
-				panic(r) // Re-panic after hooks
-			}
-		}()
-		ginContext.Next()
-	})
-
 	// Add a middleware for "before request" hooks
 	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
 		m.executeHooks(BeforeRequest, ginContext)
