@@ -90,7 +90,8 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 				panic("gingo context does not exist")
 			}
 			c := context.(*Context)
-			handler(c)
+			h := handler
+			h(c)
 			c.Next() // call next, as normal request handlers don't do that
 		},
 	)
@@ -102,5 +103,5 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 		})
 	}
 
-	return ginHandlers // Return the handlers instead of nil
+	return ginHandlers
 }
