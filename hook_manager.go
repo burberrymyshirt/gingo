@@ -70,9 +70,9 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 	ginHandlers = append(ginHandlers, m.bootstrapHooks...)
 
 	// Add a middleware for "before request" hooks
-	if len(m.hooks[BeforeRequest]) > 0 && len(routeDef.PreRequestMiddleware) > 0 {
+	if len(append(m.hooks[BeforeRequest], routeDef.PreRequestMiddleware...)) > 0 {
 		ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
-			m.executeHooks(BeforeRequest, ginContext)
+			m.executeHooks(BeforeRequest, ginContext, routeDef.PreRequestMiddleware...)
 			ginContext.Next()
 		})
 	}
@@ -97,9 +97,9 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 	)
 
 	// Add a middleware for "after request" hooks
-	if len(m.hooks[AfterRequest]) > 0 && len(routeDef.PostRequestMiddleware) > 0 {
+	if len(append(m.hooks[AfterRequest], routeDef.PostRequestMiddleware...)) > 0 {
 		ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
-			m.executeHooks(AfterRequest, ginContext)
+			m.executeHooks(AfterRequest, ginContext, routeDef.PostRequestMiddleware...)
 		})
 	}
 
