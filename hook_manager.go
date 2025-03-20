@@ -1,6 +1,7 @@
 package gingo
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 )
 
@@ -69,13 +70,18 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 	ginHandlers = append(ginHandlers, m.bootstrapHooks...)
 
 	// Add a middleware for "before request" hooks
-	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
-		m.executeHooks(BeforeRequest, ginContext)
-		ginContext.Next()
-	})
+	if len(m.hooks[BeforeRequest]) > 0 && len(routeDef.PreRequestMiddleware) > 0 {
+		ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
+			m.executeHooks(BeforeRequest, ginContext)
+			ginContext.Next()
+		})
+	}
 
 	// Convert gingo handler to gin.HandlerFunc
 	handler := routeDef.RequestHandler
+	if handler == nil {
+		panic(fmt.Sprintf("no request handler defined for %s", routeDef.Path))
+	}
 	ginHandlers = append(
 		ginHandlers,
 		func(ginContext *gin.Context) {
@@ -90,9 +96,11 @@ func (m *HookManager) mapHandlers(routeDef *RouteDefinition) []gin.HandlerFunc {
 	)
 
 	// Add a middleware for "after request" hooks
-	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
-		m.executeHooks(AfterRequest, ginContext)
-	})
+	if len(m.hooks[AfterRequest]) > 0 && len(routeDef.PostRequestMiddleware) > 0 {
+		ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
+			m.executeHooks(AfterRequest, ginContext)
+		})
+	}
 
 	return ginHandlers // Return the handlers instead of nil
 }
