@@ -3,6 +3,7 @@ package gingo
 import (
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +13,52 @@ import (
 
 type Context struct {
 	*gin.Context
+	engine   *Engine
+	routeDef *RouteDefinition
 }
+
+// HandlerName returns the main handler's name. For example if the handler is "handleGetUsers()",
+// this function will return "main.handleGetUsers".
+func (c *Context) HandlerName() string {
+	return runtime.FuncForPC(reflect.ValueOf(c.routeDef.RequestHandler).Pointer()).Name()
+}
+
+// HandlerNames returns a list of all registered handlers for this context in descending order,
+// following the semantics of HandlerName()
+func (c *Context) HandlerNames() []string {
+	hn := make([]string, 0, len(c.routeDef.getHandlers()))
+	for _, val := range c.routeDef.getHandlers() {
+		if val == nil {
+			continue
+		}
+		hn = append(hn, runtime.FuncForPC(reflect.ValueOf(val).Pointer()).Name())
+	}
+	return hn
+}
+
+// Handler returns the main handler.
+func (c *Context) Handler() HandlerFunc {
+	return c.routeDef.RequestHandler
+}
+
+// Reset prepares the context for reuse
+func (c *Context) Reset() {
+	c.routeDef = nil
+	// Reset other custom fields
+}
+
+// Next is a convenience method to call Next on the underlying gin.Context
+func (c *Context) Next() {
+	c.Context.Next()
+}
+
+//func (c *Context) ContentType() string {
+//	return c.Context.ContentType()
+//}
+//
+//func (c *Context) Request() *http.Request {
+//	return c.Context.Request
+//}
 
 // ShouldBind checks the Method and Content-Type to select a binding engine automatically,
 // Depending on the "Content-Type" header different bindings are used, for example:
@@ -24,7 +70,7 @@ type Context struct {
 // It decodes the json payload into the struct specified as a pointer.
 // Like c.Bind() but this method does not set the response status code to 400 or abort if input is not valid.
 func (c *Context) ShouldBind(obj interface{}) error {
-	b := binding.Default(c.Request.Method, c.ContentType())
+	b := binding.Default(c.Context.Request.Method, c.Context.ContentType())
 	return c.ShouldBindWith(obj, b)
 }
 
@@ -162,7 +208,8 @@ func (c *Context) ParseError(err error, obj interface{}) error {
 		)
 	}
 
-	validatorErrors, ok := err.(validator.ValidationErrors)
+	var validatorErrors validator.ValidationErrors
+	ok := errors.As(err, &validatorErrors)
 	if !ok {
 		return errors.New("invalid request: " + err.Error())
 	}
