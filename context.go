@@ -113,7 +113,7 @@ func (c *Context) ShouldBindHeader(obj interface{}) error {
 func (c *Context) ShouldBindUri(obj interface{}) error {
 	err := c.Context.ShouldBindUri(obj)
 	if err != nil {
-		return c.ParseError(err, obj)
+		return c.parseError(err, obj)
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func (c *Context) ShouldBindUri(obj interface{}) error {
 func (c *Context) ShouldBindWith(obj interface{}, b binding.Binding) error {
 	err := b.Bind(c.Request, obj)
 	if err != nil {
-		return c.ParseError(err, obj)
+		return c.parseError(err, obj)
 	}
 	return nil
 }
@@ -136,7 +136,7 @@ func (c *Context) ShouldBindWith(obj interface{}, b binding.Binding) error {
 func (c *Context) ShouldBindBodyWith(obj interface{}, bb binding.BindingBody) (err error) {
 	err = c.Context.ShouldBindBodyWith(obj, bb)
 	if err != nil {
-		return c.ParseError(err, obj)
+		return c.parseError(err, obj)
 	}
 
 	return nil
@@ -167,7 +167,7 @@ func (c *Context) ShouldBindBodyWithPlain(obj interface{}) error {
 	return c.ShouldBindBodyWith(obj, binding.Plain)
 }
 
-func (c *Context) ParseError(err error, obj interface{}) error {
+func (c *Context) parseError(err error, obj interface{}) error {
 	if err == nil {
 		return nil
 	}
