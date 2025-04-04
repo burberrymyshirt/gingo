@@ -171,7 +171,7 @@ func (engine *Engine) executeHooks(
 func (engine *Engine) mapHandlers(routeDef *RouteDefinition) gin.HandlersChain {
 	var ginHandlers gin.HandlersChain
 
-	//First middleware to set the route definition
+	// First middleware to set the route definition
 	ginHandlers = append(ginHandlers, func(ginContext *gin.Context) {
 		contextValue, exists := ginContext.Get("gingo_context")
 		if !exists {
