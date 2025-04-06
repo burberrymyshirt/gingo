@@ -67,6 +67,7 @@ func New(opts ...OptionFunc) *Engine {
 		}},
 	}
 	e.Use(e.getBootstrapHooks()...)
+	InitializeCacneCleanup()
 	return e.With(opts...)
 }
 

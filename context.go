@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -15,6 +17,51 @@ type Context struct {
 	*gin.Context
 	engine   *Engine
 	routeDef *RouteDefinition
+}
+
+type CachedFieldInfo struct {
+	JSONFieldMap   map[string]string
+	RequiredFields []string
+	LastAccessedAt time.Time
+}
+
+// Cache with expiration management
+var (
+	fieldInfoCache  = sync.Map{}
+	cacheMutex      = &sync.Mutex{}
+	cacheExpiration = 1 * time.Hour // Cache entries expire after 1 hour of non-use
+)
+
+func InitializeCacneCleanup() {
+	go func() {
+		t := time.NewTicker(time.Minute * 5)
+		defer t.Stop()
+
+		for range t.C {
+			cleanupContextCache()
+		}
+	}()
+}
+
+func cleanupContextCache() {
+	now := time.Now()
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+
+	fieldInfoCache.Range(
+		func(key, value interface{}) bool {
+			info, ok := value.(*CachedFieldInfo)
+			if !ok {
+				fieldInfoCache.Delete(key)
+				return true
+			}
+
+			if now.Sub(info.LastAccessedAt) > cacheExpiration {
+				fieldInfoCache.Delete(key)
+			}
+			return true
+		},
+	)
 }
 
 // HandlerName returns the main handler's name. For example if the handler is "handleGetUsers()",
@@ -172,67 +219,96 @@ func (c *Context) parseError(err error, obj interface{}) error {
 		return nil
 	}
 
+	objType := reflect.TypeOf(obj)
+	if objType.Kind() == reflect.Ptr {
+		objType = objType.Elem()
+	}
+	typeName := objType.PkgPath() + "." + objType.Name()
+
+	// Get or create cache entry
+	fieldInfo, ok := getFieldInfo(typeName, obj)
+	if !ok {
+		return errors.New("failed to process validation error")
+	}
+
+	// Handle EOF error (empty request body)
+	if err.Error() == "EOF" {
+		if len(fieldInfo.RequiredFields) == 0 {
+			return nil
+		}
+		return errors.New("request body cannot be empty, required fields: " +
+			strings.Join(fieldInfo.RequiredFields, ", "))
+	}
+
+	// Process validation errors
+	var validatorErrors validator.ValidationErrors
+	if !errors.As(err, &validatorErrors) {
+		return errors.New("invalid request: " + err.Error())
+	}
+
+	// Format the validation errors
+	errorMsgs := make([]string, len(validatorErrors))
+	for i, fieldError := range validatorErrors {
+		fieldName := fieldError.Field()
+		if jsonName, exists := fieldInfo.JSONFieldMap[fieldName]; exists {
+			fieldName = jsonName
+		}
+		errorMsgs[i] = fieldName + ": " + fieldError.Tag()
+	}
+
+	return errors.New("invalid request: " + strings.Join(errorMsgs, ", "))
+}
+
+// Get field information from cache or create new entry
+func getFieldInfo(typeName string, obj interface{}) (*CachedFieldInfo, bool) {
+	// Try to get from cache first
+	if cached, found := fieldInfoCache.Load(typeName); found {
+		info := cached.(*CachedFieldInfo)
+		cacheMutex.Lock()
+		info.LastAccessedAt = time.Now()
+		cacheMutex.Unlock()
+		return info, true
+	}
+
+	// Not found in cache, create new
+	info := analyzeType(obj)
+
+	// Store in cache
+	cacheMutex.Lock()
+	fieldInfoCache.Store(typeName, info)
+	cacheMutex.Unlock()
+
+	return info, true
+}
+
+func analyzeType(obj interface{}) *CachedFieldInfo {
 	val := reflect.ValueOf(obj)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
 	typ := val.Type()
 
-	if err.Error() == "EOF" {
-		// Reflect on the obj to find required fields
-		var requiredFields []string
-		for i := 0; i < typ.NumField(); i++ {
-			field := typ.Field(i)
-			jsonTag := field.Tag.Get("json")
-			if jsonTag == "-" || len(jsonTag) <= 0 {
-				continue
-			}
-
-			jsonFieldName := strings.Split(jsonTag, ",")[0]
-			validateTag := field.Tag.Get("binding")
-			if !strings.Contains(validateTag, "required") {
-				continue
-			}
-			requiredFields = append(requiredFields, jsonFieldName)
-		}
-
-		if len(requiredFields) <= 0 {
-			return nil
-		}
-
-		return errors.New(
-			"request body cannot be empty, required fields: " + strings.Join(
-				requiredFields,
-				", ",
-			),
-		)
+	info := &CachedFieldInfo{
+		JSONFieldMap:   make(map[string]string),
+		RequiredFields: []string{},
+		LastAccessedAt: time.Now(),
 	}
 
-	var validatorErrors validator.ValidationErrors
-	ok := errors.As(err, &validatorErrors)
-	if !ok {
-		return errors.New("invalid request: " + err.Error())
-	}
-	// Map to hold the json field names
-	jsonTagMap := make(map[string]string)
-	// Reflect the obj to find the json tag names
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		jsonTag := field.Tag.Get("json")
-		if jsonTag == "-" || len(jsonTag) <= 0 {
+		if jsonTag == "-" || len(jsonTag) == 0 {
 			continue
 		}
+
 		jsonFieldName := strings.Split(jsonTag, ",")[0]
-		jsonTagMap[field.Name] = jsonFieldName
+		info.JSONFieldMap[field.Name] = jsonFieldName
+
+		validateTag := field.Tag.Get("binding")
+		if strings.Contains(validateTag, "required") {
+			info.RequiredFields = append(info.RequiredFields, jsonFieldName)
+		}
 	}
 
-	out := make([]string, len(validatorErrors))
-	for i, fieldError := range validatorErrors {
-		fieldName := fieldError.Field()
-		if jsonName, exists := jsonTagMap[fieldName]; exists {
-			fieldName = jsonName
-		}
-		out[i] = fieldName + ": " + fieldError.Tag()
-	}
-	return errors.New("invalid request: " + strings.Join(out, ", "))
+	return info
 }
